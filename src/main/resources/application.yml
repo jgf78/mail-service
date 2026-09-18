@@ -40,14 +40,16 @@ server:
 
   port: ${SERVER_PORT:8086}
 
+
 logging:
-
-  level:
-
-    com.julian.email: DEBUG
-
-    org.springframework.mail: DEBUG
-
+  file:
+    path: ./target/
+    name: ${spring.application.name}
+    level:
+      com.julian: DEBUG
+      org.springframework.boot: INFO
+      org.springframework.web: INFO    
+    
 springdoc:
 
   api-docs:
