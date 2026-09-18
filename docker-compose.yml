@@ -1,0 +1,27 @@
+services:
+
+  mail-service:
+    image: jgf78/mail-service:latest
+    container_name: mail-service
+
+    restart: unless-stopped
+
+    ports:
+      - "8086:8086"
+
+    environment:
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+      SERVER_PORT: ${SERVER_PORT:-8085}
+      MAIL_ATTACHMENT_MAX_SIZE: ${MAIL_ATTACHMENT_MAX_SIZE:-10MB}
+      MAIL_MAX_REQUEST_SIZE: ${MAIL_MAX_REQUEST_SIZE:-25MB}
+
+    networks:
+      - mail-service-net
+
+networks:
+  mail-service-net:
+    driver: bridge
