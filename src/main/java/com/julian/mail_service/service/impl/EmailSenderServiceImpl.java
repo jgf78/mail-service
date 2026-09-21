@@ -1,6 +1,7 @@
 package com.julian.mail_service.service.impl;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
@@ -11,6 +12,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.julian.mail_service.dto.EmailRequest;
+import com.julian.mail_service.entity.Email;
+import com.julian.mail_service.entity.EmailAttachment;
+import com.julian.mail_service.entity.EmailRecipient;
+import com.julian.mail_service.entity.EmailStatus;
+import com.julian.mail_service.entity.RecipientType;
+import com.julian.mail_service.repository.EmailRepository;
 import com.julian.mail_service.service.EmailSenderService;
 
 import jakarta.mail.MessagingException;
@@ -20,31 +27,164 @@ import jakarta.mail.internet.MimeMessage;
 public class EmailSenderServiceImpl implements EmailSenderService {
 
     private final JavaMailSender mailSender;
+    private final EmailRepository emailRepository;
 
-    public EmailSenderServiceImpl(JavaMailSender mailSender) {
+    public EmailSenderServiceImpl(
+            JavaMailSender mailSender,
+            EmailRepository emailRepository) {
+
         this.mailSender = mailSender;
+        this.emailRepository = emailRepository;
     }
 
     @Override
     public void send(EmailRequest request, MultipartFile[] attachments) {
 
+        Email email = createEmailEntity(request, attachments);
+
+        email.setStatus(EmailStatus.QUEUED);
+        email.setCreatedAt(LocalDateTime.now());
+
+        emailRepository.save(email);
+
         try {
-            MimeMessage message = mailSender.createMimeMessage();
 
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            email.setStatus(EmailStatus.PROCESSING);
+            emailRepository.save(email);
 
-            setRecipients(helper, request);
-            setContent(helper, request);
-            addAttachments(helper, attachments);
+            sendEmail(request, attachments);
 
-            mailSender.send(message);
+            email.setStatus(EmailStatus.SENT);
+            email.setSentAt(LocalDateTime.now());
+
+            emailRepository.save(email);
 
         } catch (MessagingException | IOException | MailException e) {
+
+            email.setStatus(EmailStatus.ERROR);
+            email.setErrorMessage(e.getMessage());
+
+            emailRepository.save(email);
+
             throw new IllegalStateException("Error sending email", e);
         }
     }
 
-    private void setRecipients(MimeMessageHelper helper, EmailRequest request) throws MessagingException {
+    private Email createEmailEntity(
+            EmailRequest request,
+            MultipartFile[] attachments) {
+
+        Email email = new Email();
+
+        email.setSubject(request.subject());
+        email.setBody(request.body());
+        email.setHtml(Boolean.TRUE.equals(request.html()));
+        email.setReplyTo(request.replyTo());
+
+        addRecipients(email, request);
+        addAttachments(email, attachments);
+
+        return email;
+    }
+
+    private void addRecipients(
+            Email email,
+            EmailRequest request) {
+
+        if (request.to() != null) {
+
+            request.to().forEach(address ->
+                    email.addRecipient(
+                            new EmailRecipient(
+                                    address,
+                                    RecipientType.TO
+                            )
+                    )
+            );
+        }
+
+        if (request.cc() != null) {
+
+            request.cc().forEach(address ->
+                    email.addRecipient(
+                            new EmailRecipient(
+                                    address,
+                                    RecipientType.CC
+                            )
+                    )
+            );
+        }
+
+        if (request.bcc() != null) {
+
+            request.bcc().forEach(address ->
+                    email.addRecipient(
+                            new EmailRecipient(
+                                    address,
+                                    RecipientType.BCC
+                            )
+                    )
+            );
+        }
+    }
+
+    private void addAttachments(
+            Email email,
+            MultipartFile[] attachments) {
+
+        if (attachments == null || attachments.length == 0) {
+            return;
+        }
+
+        for (MultipartFile attachment : attachments) {
+
+            if (attachment.isEmpty()) {
+                continue;
+            }
+
+            String filename = attachment.getOriginalFilename();
+
+            if (filename == null || filename.isBlank()) {
+                filename = "attachment";
+            }
+
+            String contentType = attachment.getContentType();
+
+            if (contentType == null || contentType.isBlank()) {
+                contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
+            }
+
+            email.addAttachment(
+                    new EmailAttachment(
+                            filename,
+                            contentType,
+                            attachment.getSize()
+                    )
+            );
+        }
+    }
+
+    private void sendEmail(
+            EmailRequest request,
+            MultipartFile[] attachments)
+            throws MessagingException, IOException {
+
+        MimeMessage message = mailSender.createMimeMessage();
+
+        MimeMessageHelper helper =
+                new MimeMessageHelper(message, true, "UTF-8");
+
+        setRecipients(helper, request);
+        setContent(helper, request);
+        addAttachments(helper, attachments);
+
+        mailSender.send(message);
+    }
+
+    private void setRecipients(
+            MimeMessageHelper helper,
+            EmailRequest request)
+            throws MessagingException {
 
         helper.setTo(request.to().toArray(new String[0]));
 
@@ -57,12 +197,14 @@ public class EmailSenderServiceImpl implements EmailSenderService {
         }
 
         if (request.replyTo() != null && !request.replyTo().isBlank()) {
-
             helper.setReplyTo(request.replyTo());
         }
     }
 
-    private void setContent(MimeMessageHelper helper, EmailRequest request) throws MessagingException {
+    private void setContent(
+            MimeMessageHelper helper,
+            EmailRequest request)
+            throws MessagingException {
 
         helper.setSubject(request.subject());
 
@@ -71,7 +213,9 @@ public class EmailSenderServiceImpl implements EmailSenderService {
         helper.setText(request.body(), html);
     }
 
-    private void addAttachments(MimeMessageHelper helper, MultipartFile[] attachments)
+    private void addAttachments(
+            MimeMessageHelper helper,
+            MultipartFile[] attachments)
             throws MessagingException, IOException {
 
         if (attachments == null || attachments.length == 0) {
@@ -98,7 +242,11 @@ public class EmailSenderServiceImpl implements EmailSenderService {
                 contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
             }
 
-            helper.addAttachment(filename, new ByteArrayResource(content), contentType);
+            helper.addAttachment(
+                    filename,
+                    new ByteArrayResource(content),
+                    contentType
+            );
         }
     }
 }
