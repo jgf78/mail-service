@@ -10,7 +10,7 @@ import com.julian.mail_service.dto.EmailRequest;
 
 public interface EmailSenderService {
 
-    public void send(
+    public Long send(
             EmailRequest request,
             MultipartFile[] attachments);
     

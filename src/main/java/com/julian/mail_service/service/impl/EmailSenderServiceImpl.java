@@ -44,7 +44,7 @@ public class EmailSenderServiceImpl implements EmailSenderService {
     }
 
     @Override
-    public void send(EmailRequest request, MultipartFile[] attachments) {
+    public Long send(EmailRequest request, MultipartFile[] attachments) {
 
         Email email = createEmailEntity(request, attachments);
 
@@ -64,6 +64,8 @@ public class EmailSenderServiceImpl implements EmailSenderService {
             email.setSentAt(LocalDateTime.now());
 
             emailRepository.save(email);
+            
+            return email.getId();
 
         } catch (MessagingException | IOException | MailException e) {
 

@@ -97,10 +97,11 @@ public class EmailController {
                     required = false
             ) MultipartFile[] attachments) {
 
-        emailSenderService.send(request, attachments);
+        Long emailId = emailSenderService.send(request, attachments);
 
         return ResponseEntity.ok(
                 new EmailResponse(
+                        emailId,
                         "SENT",
                         "Email sent successfully"
                 )
