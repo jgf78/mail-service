@@ -48,3 +48,4 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: com.julian.mail_service.*
+        spring.json.value.default.type: com.julian.mail_service.kafka.EmailSendEvent
