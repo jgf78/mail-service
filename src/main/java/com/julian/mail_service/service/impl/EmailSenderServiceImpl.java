@@ -2,6 +2,8 @@ package com.julian.mail_service.service.impl;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
@@ -9,8 +11,12 @@ import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.julian.mail_service.dto.EmailAttachmentResponse;
+import com.julian.mail_service.dto.EmailDetailResponse;
+import com.julian.mail_service.dto.EmailRecipientResponse;
 import com.julian.mail_service.dto.EmailRequest;
 import com.julian.mail_service.entity.Email;
 import com.julian.mail_service.entity.EmailAttachment;
@@ -248,5 +254,61 @@ public class EmailSenderServiceImpl implements EmailSenderService {
                     contentType
             );
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EmailDetailResponse> findAll() {
+
+        return emailRepository.findAll()
+                .stream()
+                .map(this::toEmailDetailResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<EmailDetailResponse> findById(Long id) {
+
+        return emailRepository.findById(id)
+                .map(this::toEmailDetailResponse);
+    }
+    
+    private EmailDetailResponse toEmailDetailResponse(Email email) {
+
+        List<EmailRecipientResponse> recipients =
+                email.getRecipients()
+                        .stream()
+                        .map(recipient -> new EmailRecipientResponse(
+                                recipient.getId(),
+                                recipient.getAddress(),
+                                recipient.getType()
+                        ))
+                        .toList();
+
+        List<EmailAttachmentResponse> attachments =
+                email.getAttachments()
+                        .stream()
+                        .map(attachment -> new EmailAttachmentResponse(
+                                attachment.getId(),
+                                attachment.getFilename(),
+                                attachment.getContentType(),
+                                attachment.getSize()
+                        ))
+                        .toList();
+
+        return new EmailDetailResponse(
+                email.getId(),
+                email.getStatus().name(),
+                email.getSubject(),
+                email.getBody(),
+                email.getHtml(),
+                email.getReplyTo(),
+                email.getCreatedAt(),
+                email.getSentAt(),
+                email.getErrorMessage(),
+                recipients,
+                attachments
+        );
     }
 }
