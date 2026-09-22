@@ -318,7 +318,7 @@ public class EmailSenderServiceImpl implements EmailSenderService {
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = IllegalStateException.class)
     public void processEmail(Email email) {
 
         try {

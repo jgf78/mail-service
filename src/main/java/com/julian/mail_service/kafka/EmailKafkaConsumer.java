@@ -1,9 +1,9 @@
 package com.julian.mail_service.kafka;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -27,7 +27,8 @@ public class EmailKafkaConsumer {
 
     @KafkaListener(
             topics = "mail.send",
-            groupId = "mail-service"
+            groupId = "mail-service",
+            containerFactory = "kafkaListenerContainerFactory"
     )
     public void consume(EmailSendEvent event) {
 
@@ -123,7 +124,9 @@ public class EmailKafkaConsumer {
         }
 
         @Override
-        public void transferTo(Path destination) throws IOException {
+        public void transferTo(Path destination)
+                throws IOException {
+
             Files.write(destination, content);
         }
 
