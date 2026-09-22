@@ -1,3 +1,5 @@
+server:
+  port: 8086
 spring:
   application:
     name: mail-service
@@ -48,4 +50,4 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: com.julian.mail_service.*
-        spring.json.value.default.type: com.julian.mail_service.kafka.EmailSendEvent        
+        spring.json.value.default.type: com.julian.mail_service.kafka.EmailSendEvent
