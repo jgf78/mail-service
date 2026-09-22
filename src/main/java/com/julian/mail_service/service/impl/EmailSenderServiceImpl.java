@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.mail.MailException;
@@ -34,17 +35,22 @@ public class EmailSenderServiceImpl implements EmailSenderService {
 
     private final JavaMailSender mailSender;
     private final EmailRepository emailRepository;
+    private final EmailSenderService emailSenderService;
 
     public EmailSenderServiceImpl(
             JavaMailSender mailSender,
-            EmailRepository emailRepository) {
+            EmailRepository emailRepository,
+            @Lazy EmailSenderService emailSenderService) {
 
         this.mailSender = mailSender;
         this.emailRepository = emailRepository;
+        this.emailSenderService = emailSenderService;
     }
 
     @Override
-    public Long send(EmailRequest request, MultipartFile[] attachments) {
+    public Long send(
+            EmailRequest request,
+            MultipartFile[] attachments) {
 
         Email email = createEmailEntity(request, attachments);
 
@@ -53,29 +59,9 @@ public class EmailSenderServiceImpl implements EmailSenderService {
 
         emailRepository.save(email);
 
-        try {
+        emailSenderService.processEmail(email);
 
-            email.setStatus(EmailStatus.PROCESSING);
-            emailRepository.save(email);
-
-            sendEmail(request, attachments);
-
-            email.setStatus(EmailStatus.SENT);
-            email.setSentAt(LocalDateTime.now());
-
-            emailRepository.save(email);
-            
-            return email.getId();
-
-        } catch (MessagingException | IOException | MailException e) {
-
-            email.setStatus(EmailStatus.ERROR);
-            email.setErrorMessage(e.getMessage());
-
-            emailRepository.save(email);
-
-            throw new IllegalStateException("Error sending email", e);
-        }
+        return email.getId();
     }
 
     private Email createEmailEntity(
@@ -100,7 +86,6 @@ public class EmailSenderServiceImpl implements EmailSenderService {
             EmailRequest request) {
 
         if (request.to() != null) {
-
             request.to().forEach(address ->
                     email.addRecipient(
                             new EmailRecipient(
@@ -112,7 +97,6 @@ public class EmailSenderServiceImpl implements EmailSenderService {
         }
 
         if (request.cc() != null) {
-
             request.cc().forEach(address ->
                     email.addRecipient(
                             new EmailRecipient(
@@ -124,7 +108,6 @@ public class EmailSenderServiceImpl implements EmailSenderService {
         }
 
         if (request.bcc() != null) {
-
             request.bcc().forEach(address ->
                     email.addRecipient(
                             new EmailRecipient(
@@ -162,98 +145,113 @@ public class EmailSenderServiceImpl implements EmailSenderService {
                 contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
             }
 
-            email.addAttachment(
-                    new EmailAttachment(
-                            filename,
-                            contentType,
-                            attachment.getSize()
-                    )
-            );
+            try {
+                email.addAttachment(
+                        new EmailAttachment(
+                                filename,
+                                contentType,
+                                attachment.getSize(),
+                                attachment.getBytes()
+                        )
+                );
+            } catch (IOException e) {
+                throw new IllegalStateException(
+                        "Error reading attachment: " + filename,
+                        e
+                );
+            }
         }
     }
 
-    private void sendEmail(
-            EmailRequest request,
-            MultipartFile[] attachments)
-            throws MessagingException, IOException {
+    private void sendEmail(Email email)
+            throws MessagingException {
 
         MimeMessage message = mailSender.createMimeMessage();
 
         MimeMessageHelper helper =
-                new MimeMessageHelper(message, true, "UTF-8");
+                new MimeMessageHelper(
+                        message,
+                        true,
+                        "UTF-8"
+                );
 
-        setRecipients(helper, request);
-        setContent(helper, request);
-        addAttachments(helper, attachments);
+        setRecipients(helper, email);
+        setContent(helper, email);
+        addAttachments(helper, email);
 
         mailSender.send(message);
     }
 
     private void setRecipients(
             MimeMessageHelper helper,
-            EmailRequest request)
+            Email email)
             throws MessagingException {
 
-        helper.setTo(request.to().toArray(new String[0]));
+        List<String> to = email.getRecipients().stream()
+                .filter(recipient ->
+                        recipient.getType() == RecipientType.TO)
+                .map(EmailRecipient::getAddress)
+                .toList();
 
-        if (request.cc() != null && !request.cc().isEmpty()) {
-            helper.setCc(request.cc().toArray(new String[0]));
+        List<String> cc = email.getRecipients().stream()
+                .filter(recipient ->
+                        recipient.getType() == RecipientType.CC)
+                .map(EmailRecipient::getAddress)
+                .toList();
+
+        List<String> bcc = email.getRecipients().stream()
+                .filter(recipient ->
+                        recipient.getType() == RecipientType.BCC)
+                .map(EmailRecipient::getAddress)
+                .toList();
+
+        helper.setTo(to.toArray(new String[0]));
+
+        if (!cc.isEmpty()) {
+            helper.setCc(cc.toArray(new String[0]));
         }
 
-        if (request.bcc() != null && !request.bcc().isEmpty()) {
-            helper.setBcc(request.bcc().toArray(new String[0]));
+        if (!bcc.isEmpty()) {
+            helper.setBcc(bcc.toArray(new String[0]));
         }
 
-        if (request.replyTo() != null && !request.replyTo().isBlank()) {
-            helper.setReplyTo(request.replyTo());
+        if (email.getReplyTo() != null
+                && !email.getReplyTo().isBlank()) {
+
+            helper.setReplyTo(email.getReplyTo());
         }
     }
 
     private void setContent(
             MimeMessageHelper helper,
-            EmailRequest request)
+            Email email)
             throws MessagingException {
 
-        helper.setSubject(request.subject());
+        helper.setSubject(email.getSubject());
 
-        boolean html = Boolean.TRUE.equals(request.html());
+        boolean html = Boolean.TRUE.equals(email.getHtml());
 
-        helper.setText(request.body(), html);
+        helper.setText(email.getBody(), html);
     }
 
     private void addAttachments(
             MimeMessageHelper helper,
-            MultipartFile[] attachments)
-            throws MessagingException, IOException {
+            Email email) throws MessagingException {
 
-        if (attachments == null || attachments.length == 0) {
-            return;
-        }
+        for (EmailAttachment attachment : email.getAttachments()) {
 
-        for (MultipartFile attachment : attachments) {
-
-            if (attachment.isEmpty()) {
+            if (attachment.getContent() == null
+                    || attachment.getContent().length == 0) {
                 continue;
             }
 
-            String filename = attachment.getOriginalFilename();
-
-            if (filename == null || filename.isBlank()) {
-                filename = "attachment";
-            }
-
-            byte[] content = attachment.getBytes();
-
-            String contentType = attachment.getContentType();
-
-            if (contentType == null || contentType.isBlank()) {
-                contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
-            }
+            ByteArrayResource resource =
+                    new ByteArrayResource(attachment.getContent());
 
             helper.addAttachment(
-                    filename,
-                    new ByteArrayResource(content),
-                    contentType
+                    attachment.getFilename(),
+                    resource,
+                    attachment.getContentType()
             );
         }
     }
@@ -275,28 +273,33 @@ public class EmailSenderServiceImpl implements EmailSenderService {
         return emailRepository.findById(id)
                 .map(this::toEmailDetailResponse);
     }
-    
-    private EmailDetailResponse toEmailDetailResponse(Email email) {
+
+    private EmailDetailResponse toEmailDetailResponse(
+            Email email) {
 
         List<EmailRecipientResponse> recipients =
                 email.getRecipients()
                         .stream()
-                        .map(recipient -> new EmailRecipientResponse(
-                                recipient.getId(),
-                                recipient.getAddress(),
-                                recipient.getType()
-                        ))
+                        .map(recipient ->
+                                new EmailRecipientResponse(
+                                        recipient.getId(),
+                                        recipient.getAddress(),
+                                        recipient.getType()
+                                )
+                        )
                         .toList();
 
         List<EmailAttachmentResponse> attachments =
                 email.getAttachments()
                         .stream()
-                        .map(attachment -> new EmailAttachmentResponse(
-                                attachment.getId(),
-                                attachment.getFilename(),
-                                attachment.getContentType(),
-                                attachment.getSize()
-                        ))
+                        .map(attachment ->
+                                new EmailAttachmentResponse(
+                                        attachment.getId(),
+                                        attachment.getFilename(),
+                                        attachment.getContentType(),
+                                        attachment.getSize()
+                                )
+                        )
                         .toList();
 
         return new EmailDetailResponse(
@@ -312,5 +315,35 @@ public class EmailSenderServiceImpl implements EmailSenderService {
                 recipients,
                 attachments
         );
+    }
+
+    @Override
+    @Transactional
+    public void processEmail(Email email) {
+
+        try {
+            email.setStatus(EmailStatus.PROCESSING);
+            emailRepository.save(email);
+
+            sendEmail(email);
+
+            email.setStatus(EmailStatus.SENT);
+            email.setSentAt(LocalDateTime.now());
+            email.setErrorMessage(null);
+
+            emailRepository.save(email);
+
+        } catch (MessagingException | MailException e) {
+
+            email.setStatus(EmailStatus.ERROR);
+            email.setErrorMessage(e.getMessage());
+
+            emailRepository.save(email);
+
+            throw new IllegalStateException(
+                    "Error sending email",
+                    e
+            );
+        }
     }
 }

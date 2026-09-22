@@ -7,15 +7,18 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.julian.mail_service.dto.EmailDetailResponse;
 import com.julian.mail_service.dto.EmailRequest;
+import com.julian.mail_service.entity.Email;
 
 public interface EmailSenderService {
 
-    public Long send(
+    Long send(
             EmailRequest request,
             MultipartFile[] attachments);
     
     List<EmailDetailResponse> findAll();
 
     Optional<EmailDetailResponse> findById(Long id);
-
+    
+    void processEmail(Email email);
+    
 }
