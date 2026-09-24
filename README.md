@@ -14,13 +14,17 @@ La aplicación puede recibir solicitudes de envío mediante:
 
 💾 Persistencia en PostgreSQL
 
+📦 Almacenamiento de archivos mediante MinIO
+
 📎 Soporte para archivos adjuntos
 
 👥 Gestión de múltiples destinatarios
 
 🐳 Preparado para ejecución mediante Docker
 
-🚀 Características principales
+---
+
+# 🚀 Características principales
 
 ==============================
 
@@ -40,6 +44,8 @@ La aplicación puede recibir solicitudes de envío mediante:
 
 📎 Archivos adjuntos
 
+📦 Almacenamiento de adjuntos mediante MinIO
+
 ↩️ Reply-To
 
 💾 Persistencia mediante PostgreSQL
@@ -54,239 +60,245 @@ La aplicación puede recibir solicitudes de envío mediante:
 
 🔧 Configuración mediante variables de entorno
 
-📨 Formas de envío
+---
+
+# 📨 Formas de envío
 
 ==================
 
-Mail Service permite utilizar dos mecanismos diferentes para solicitar
+Mail Service permite utilizar dos mecanismos diferentes para solicitar el envío de un correo.
 
-el envío de un correo.
-
-🌐 Envío mediante REST
+## 🌐 Envío mediante REST
 
 =====================
 
-Los microservicios pueden realizar una petición HTTP directamente
-
-contra Mail Service.
+Los microservicios pueden realizar una petición HTTP directamente contra Mail Service.
 
 Arquitectura:
 
+```text
 Microservicio
-
-```
- │
-
- │ REST
-
- ▼
-```
-
+     │
+     │ REST
+     ▼
 Mail Service
-
-```
- │
-
- │ SMTP
-
- ▼
-```
-
-Servidor de correo
-
-```
- │
-
- ▼
+     │
+     ├──► PostgreSQL
+     │
+     ├──► MinIO
+     │
+     └──► SMTP
+              │
+              ▼
+        Servidor de correo
+              │
+              ▼
+         Destinatario
 ```
 
-Destinatario
+Este mecanismo permite realizar envíos de forma síncrona y obtener la respuesta directamente desde la API.
 
-Este mecanismo permite realizar envíos de forma síncrona y obtener
+---
 
-la respuesta directamente desde la API.
-
-📡 Envío mediante Kafka
+## 📡 Envío mediante Kafka
 
 =======================
 
-Mail Service también puede recibir solicitudes de envío mediante
-
-Apache Kafka.
+Mail Service también puede recibir solicitudes de envío mediante Apache Kafka.
 
 Arquitectura:
 
+```text
 Microservicio
-
-```
- │
-
- │ Kafka
-
- ▼
-```
-
-mail.send
-
-```
- │
-
- ▼
-```
-
+     │
+     │ Kafka
+     ▼
+  mail.send
+     │
+     ▼
 Mail Service
-
-```
- │
-
- │ SMTP
-
- ▼
-```
-
-Servidor de correo
-
-```
- │
-
- ▼
+     │
+     ├──► PostgreSQL
+     │
+     ├──► MinIO
+     │
+     └──► SMTP
+              │
+              ▼
+        Servidor de correo
+              │
+              ▼
+         Destinatario
 ```
 
-Destinatario
+El productor publica un mensaje en el topic correspondiente y Mail Service procesa el evento mediante un consumidor Kafka.
 
-El productor publica un mensaje en el topic correspondiente y
+Este mecanismo permite desacoplar el productor del proceso de envío y utilizar un flujo basado en mensajería.
 
-Mail Service procesa el evento mediante un consumidor Kafka.
+---
 
-Este mecanismo permite desacoplar el productor del proceso de envío
-
-y utilizar un flujo basado en mensajería.
-
-🔄 Arquitectura general
+# 🔄 Arquitectura general
 
 ========================
 
-Las dos vías de entrada utilizan la misma lógica de negocio y
+Las dos vías de entrada utilizan la misma lógica de negocio y terminan utilizando el mismo proceso de envío.
 
-terminan utilizando el mismo proceso de envío.
-
-```
-                ┌──────────────┐
-
-                │ Microservicio│
-
-                └──────┬───────┘
-
-                       │
-
-             ┌─────────┴─────────┐
-
-             │                   │
-
-            REST               Kafka
-
-             │                   │
-
-             ▼                   ▼
-
-      ┌─────────────────────────────┐
-      │        Mail Service         │
-      │                             │
-      │      Email Service          │
-      └──────────────┬──────────────┘
-                     │
-                ┌────┴────┐
-                │         │
-                ▼         ▼
-          PostgreSQL     SMTP
-                          │
-                          ▼
-                     Destinatario
+```text
+                    ┌──────────────┐
+                    │ Microservicio│
+                    └──────┬───────┘
+                           │
+                 ┌─────────┴─────────┐
+                 │                   │
+                REST               Kafka
+                 │                   │
+                 ▼                   ▼
+          ┌─────────────────────────────┐
+          │        Mail Service         │
+          └──────────────┬──────────────┘
+                         │
+              ┌──────────┼──────────┐
+              │          │          │
+              ▼          ▼          ▼
+         PostgreSQL    MinIO       SMTP
+              │          │          │
+              │          │          ▼
+              │          │     Servidor correo
+              │          │          │
+              │          │          ▼
+              │          │      Destinatario
+              │          │
+              │          └──► Archivos adjuntos
+              │
+              └──► Email + destinatarios
+                   + metadata + estado
 ```
 
-De esta forma, REST y Kafka actúan como diferentes mecanismos de
+De esta forma, REST y Kafka actúan como diferentes mecanismos de entrada al mismo servicio.
 
-entrada al mismo servicio de correo.
+---
 
-📡 Kafka
+# 📡 Kafka
 
 =========
 
-La integración con Kafka permite procesar solicitudes de envío
-
-de forma asíncrona.
+La integración con Kafka permite procesar solicitudes de envío de forma asíncrona.
 
 El flujo básico es:
 
+```text
 Productor
-
-│
-
-▼
-
-Kafka
-
-│
-
-│ mail.send
-
-▼
-
+   │
+   ▼
+ Kafka
+   │
+   │ mail.send
+   ▼
 Mail Service
-
-│
-
-▼
-
+   │
+   ├──► PostgreSQL
+   │
+   ├──► MinIO
+   │
+   ▼
 Procesamiento del email
+   │
+   ▼
+ SMTP
+```
 
-│
+Kafka permite desacoplar los microservicios productores del servicio responsable del envío de correo.
 
-▼
+---
 
-SMTP
-
-Kafka permite desacoplar los microservicios productores del servicio
-
-responsable del envío de correo.
-
-📎 Archivos adjuntos
+# 📎 Archivos adjuntos
 
 ====================
 
-Mail Service permite enviar archivos adjuntos mediante peticiones
+Mail Service permite enviar archivos adjuntos tanto mediante REST como mediante eventos Kafka.
 
-multipart/form-data a través de la API REST.
+En REST se utilizan peticiones `multipart/form-data`.
+
+En Kafka, los eventos pueden incluir el contenido del adjunto codificado en Base64.
 
 Ejemplo:
 
+```text
 📨 Email
 
 ├── 👥 Destinatarios
-
 ├── 📝 Asunto
-
 ├── 📄 Cuerpo
-
 └── 📎 Adjuntos
-
-```
-├── documento.pdf
-
-└── imagen.png
+      ├── documento.pdf
+      └── imagen.png
 ```
 
-Los archivos adjuntos quedan asociados al correo correspondiente
+Los archivos adjuntos **no se almacenan como datos binarios en PostgreSQL**.
 
-en la base de datos.
+El funcionamiento es:
 
-🗄️ Persistencia
+```text
+Adjunto
+   │
+   ▼
+Mail Service
+   │
+   ├──────────────► MinIO
+   │                  │
+   │                  └──► Fichero
+   │
+   └──────────────► PostgreSQL
+                      │
+                      └──► Metadata + storage_key
+```
+
+PostgreSQL almacena la información necesaria para identificar el archivo, mientras que MinIO almacena el contenido binario.
+
+Esto permite mantener la base de datos ligera y separar la persistencia de datos estructurados del almacenamiento de archivos.
+
+---
+
+# 📦 MinIO
+
+=============
+
+Mail Service utiliza MinIO como almacenamiento de objetos para los archivos adjuntos.
+
+Los archivos se almacenan en un bucket específico:
+
+```text
+mail-attachments
+```
+
+Cada adjunto dispone de una clave única (`storage_key`) que permite localizar el objeto almacenado en MinIO.
+
+La aplicación utiliza una abstracción de almacenamiento mediante `StorageService`, permitiendo desacoplar la lógica de negocio de la implementación concreta de almacenamiento.
+
+Flujo:
+
+```text
+Mail Service
+     │
+     │ upload
+     ▼
+   MinIO
+     │
+     ▼
+mail-attachments
+     │
+     └──► storage_key
+```
+
+Durante el envío del correo, Mail Service recupera el archivo desde MinIO y lo incorpora al mensaje SMTP.
+
+---
+
+# 🗄️ Persistencia
 
 ================
 
-La aplicación utiliza PostgreSQL para almacenar la información
-
-relacionada con los correos.
+La aplicación utiliza PostgreSQL para almacenar la información relacionada con los correos.
 
 Se almacenan principalmente:
 
@@ -294,7 +306,9 @@ Se almacenan principalmente:
 
 👥 Destinatarios
 
-📎 Archivos adjuntos
+📎 Metadata de los archivos adjuntos
+
+🔑 Referencia `storage_key` de los adjuntos
 
 📊 Estado del envío
 
@@ -302,41 +316,36 @@ Se almacenan principalmente:
 
 ❌ Mensaje de error
 
-La persistencia permite mantener un histórico de los correos
+El contenido binario de los archivos adjuntos se almacena en MinIO y no directamente en PostgreSQL.
 
-procesados y realizar seguimiento de los envíos.
+La persistencia permite mantener un histórico de los correos procesados y realizar seguimiento de los envíos.
 
-📊 Estados
+---
+
+# 📊 Estados
 
 ==========
 
-Los correos disponen de un estado que permite conocer el resultado
-
-del procesamiento.
+Los correos disponen de un estado que permite conocer el resultado del procesamiento.
 
 Flujo básico:
 
+```text
 QUEUED
+   │
+   ▼
+PROCESSING
+   │
+   ├──► SENT
+   │
+   └──► ERROR
+```
 
-│
+Esto permite identificar los envíos realizados correctamente y aquellos que han producido un error.
 
-▼
+---
 
-Procesamiento
-
-│
-
-├──► SENT
-
-│
-
-└──► FAILED
-
-Esto permite identificar los envíos realizados correctamente y
-
-aquellos que han producido un error.
-
-📚 Swagger / OpenAPI
+# 📚 Swagger / OpenAPI
 
 ====================
 
@@ -346,195 +355,181 @@ Una vez arrancada la aplicación puede accederse desde:
 
 👉 http://localhost:8086/swagger-ui.html
 
-🧩 Tecnologías
+---
+
+# 🧩 Tecnologías
 
 ===============
 
-Java              -> Lenguaje principal
+Java 21              -> Lenguaje principal
 
-Spring Boot       -> Framework backend
+Spring Boot          -> Framework backend
 
-Spring Web        -> API REST
+Spring Web           -> API REST
 
-Spring Kafka      -> Integración con Kafka
+Spring Kafka         -> Integración con Kafka
 
-Spring Mail       -> Envío SMTP
+Spring Mail          -> Envío SMTP
 
-Spring Data JPA   -> Persistencia
+Spring Data JPA      -> Persistencia
 
-Hibernate         -> ORM
+Hibernate             -> ORM
 
-PostgreSQL        -> Base de datos
+PostgreSQL           -> Base de datos
 
-Lombok            -> Reducción de código repetitivo
+MinIO                -> Almacenamiento de objetos
 
-Swagger / OpenAPI -> Documentación API
+Lombok               -> Reducción de código repetitivo
 
-Maven             -> Build tool
+Swagger / OpenAPI    -> Documentación API
 
-Docker            -> Deploy
+Maven                -> Build tool
 
-🏗️ Arquitectura del proyecto
+Docker               -> Deploy
+
+---
+
+# 🏗️ Arquitectura del proyecto
 
 =============================
 
+```text
 mail-service/
 
 ├── src/
-
 │   ├── main/
-
 │   │   ├── java/
-
 │   │   │   └── com/julian/mail_service/
-
 │   │   │
-
+│   │   ├── config/
+│   │   │   └── MinioConfig
+│   │   │
 │   │   ├── controller/
-
 │   │   │   └── EmailController
-
 │   │   │
-
 │   │   ├── service/
-
-│   │   │   ├── EmailService
-
+│   │   │   ├── EmailSenderService
+│   │   │   ├── StorageService
 │   │   │   └── impl/
-
-│   │   │       └── EmailServiceImpl
-
+│   │   │       ├── EmailSenderServiceImpl
+│   │   │       └── MinioStorageServiceImpl
 │   │   │
-
 │   │   ├── kafka/
-
 │   │   │   └── ...
-
 │   │   │
-
 │   │   ├── repository/
-
 │   │   │   ├── EmailRepository
-
-│   │   │   ├── RecipientRepository
-
-│   │   │   └── AttachmentRepository
-
+│   │   │   ├── EmailRecipientRepository
+│   │   │   └── EmailAttachmentRepository
 │   │   │
-
 │   │   ├── entity/
-
 │   │   │   ├── Email
-
-│   │   │   ├── Recipient
-
-│   │   │   └── Attachment
-
+│   │   │   ├── EmailRecipient
+│   │   │   └── EmailAttachment
 │   │   │
-
 │   │   ├── dto/
-
 │   │   │   ├── EmailRequest
-
 │   │   │   ├── EmailMultipartRequest
-
 │   │   │   └── EmailResponse
-
 │   │   │
-
 │   │   └── exception/
-
 │   │       └── GlobalExceptionHandler
-
 │   │
-
 │   └── resources/
-
 │       └── application.yml
-
 │
-
 └── pom.xml
+```
 
-🔧 Componentes principales
+---
+
+# 🔧 Componentes principales
 
 ==========================
 
-EmailController
+### EmailController
 
 * Gestiona las peticiones HTTP
-
 * Recibe las solicitudes de envío REST
-
 * Gestiona peticiones con y sin adjuntos
 
-Kafka Consumer
+### Kafka Consumer
 
 * Consume los mensajes publicados en Kafka
-
 * Recibe las solicitudes de envío asíncronas
-
 * Delega el procesamiento al servicio de correo
 
-EmailService
+### EmailSenderService
 
 * Define las operaciones del servicio de correo
-
 * Centraliza la lógica de negocio
-
 * Es utilizado tanto por REST como por Kafka
 
-EmailServiceImpl
+### EmailSenderServiceImpl
 
 * Implementa la lógica de envío
-
 * Gestiona la persistencia
-
 * Procesa los correos
-
+* Gestiona los archivos adjuntos
+* Utiliza MinIO para el almacenamiento de archivos
 * Actualiza el estado del envío
 
-Repositories
+### StorageService
+
+* Define la abstracción para el almacenamiento de archivos
+* Permite subir, descargar y eliminar objetos
+
+### MinioStorageServiceImpl
+
+* Implementa `StorageService` utilizando MinIO
+* Gestiona la subida de archivos
+* Gestiona la descarga de archivos
+* Gestiona la eliminación de objetos
+
+### Repositories
 
 * Gestionan el acceso a PostgreSQL mediante Spring Data JPA
 
-DTOs
+### DTOs
 
-* Definen los modelos de entrada y salida de la API y los mensajes
+* Definen los modelos de entrada y salida de la API y los mensajes utilizados durante el procesamiento
 
-  utilizados durante el procesamiento
-
-GlobalExceptionHandler
+### GlobalExceptionHandler
 
 * Centraliza la gestión de excepciones
-
 * Devuelve respuestas de error controladas
 
-⚙️ Configuración local
+---
+
+# ⚙️ Configuración local
 
 ======================
 
 Clonar el proyecto:
 
+```bash
 git clone https://github.com/jgf78/mail-service.git
-
 cd mail-service
+```
 
 Configurar las variables de entorno necesarias para:
 
 * SMTP
-
 * PostgreSQL
-
 * Kafka
+* MinIO
 
 Compilar:
 
+```bash
 mvn clean install -DskipTests
+```
 
 Arrancar la aplicación:
 
+```bash
 mvn spring-boot:run
+```
 
 La aplicación estará disponible en:
 
@@ -544,7 +539,9 @@ Swagger:
 
 👉 http://localhost:8086/swagger-ui.html
 
-🗄️ PostgreSQL
+---
+
+# 🗄️ PostgreSQL
 
 ==============
 
@@ -552,29 +549,53 @@ La aplicación necesita una base de datos PostgreSQL.
 
 Configuración mediante variables de entorno:
 
+```text
 DB_HOST
-
 DB_PORT
-
 DB_NAME
-
 DB_USERNAME
-
 DB_PASSWORD
+```
 
 Ejemplo:
 
+```text
 DB_HOST=localhost
-
 DB_PORT=5432
-
 DB_NAME=mailservice
-
 DB_USERNAME=iagente
-
 DB_PASSWORD=********
+```
 
-📨 Configuración SMTP
+---
+
+# 📦 MinIO
+
+==========
+
+La conexión con MinIO se configura mediante variables de entorno:
+
+```text
+MINIO_ENDPOINT
+MINIO_ACCESS_KEY
+MINIO_SECRET_KEY
+MINIO_BUCKET
+```
+
+Ejemplo:
+
+```text
+MINIO_ENDPOINT=http://minio:9000
+MINIO_ACCESS_KEY=mail-service
+MINIO_SECRET_KEY=********
+MINIO_BUCKET=mail-attachments
+```
+
+Las credenciales de MinIO no deben almacenarse directamente en el código fuente.
+
+---
+
+# 📨 Configuración SMTP
 
 =====================
 
@@ -582,59 +603,50 @@ El servidor SMTP se configura mediante variables de entorno.
 
 Ejemplo:
 
+```text
 MAIL_HOST
-
 MAIL_PORT
-
 MAIL_USERNAME
-
 MAIL_PASSWORD
-
 MAIL_SMTP_AUTH
-
 MAIL_SMTP_STARTTLS_ENABLE
+```
 
-Las credenciales y parámetros de conexión no se almacenan
+Las credenciales y parámetros de conexión no se almacenan directamente en el código fuente.
 
-directamente en el código fuente.
+---
 
-📡 Configuración Kafka
+# 📡 Configuración Kafka
 
 ======================
 
-La conexión con Kafka se configura mediante variables de entorno
+La conexión con Kafka se configura mediante variables de entorno y propiedades de Spring Kafka.
 
-y propiedades de Spring Kafka.
+El servicio utiliza Kafka para recibir solicitudes de envío mediante el topic:
 
-El servicio utiliza Kafka para recibir solicitudes de envío
-
-mediante el topic:
-
+```text
 mail.send
+```
 
 El flujo de mensajería es:
 
+```text
 Productor
-
-│
-
-▼
-
+   │
+   ▼
 mail.send
-
-│
-
-▼
-
+   │
+   ▼
 Mail Service
+   │
+   ├──► PostgreSQL
+   ├──► MinIO
+   └──► SMTP
+```
 
-│
+---
 
-▼
-
-Envío SMTP
-
-🐳 Docker
+# 🐳 Docker
 
 =========
 
@@ -642,40 +654,40 @@ La aplicación está preparada para ejecutarse mediante Docker.
 
 Arquitectura:
 
+```text
+                 ┌───────────────┐
+                 │ Microservicio │
+                 └───────┬───────┘
+                         │
+                   ┌─────┴─────┐
+                   │           │
+                  REST        Kafka
+                   │           │
+                   ▼           ▼
+              ┌──────────────────┐
+              │   Mail Service   │
+              └────────┬─────────┘
+                       │
+              ┌────────┼─────────┐
+              │        │         │
+              ▼        ▼         ▼
+         PostgreSQL  MinIO      SMTP
+                       │          │
+                       │          ▼
+                       │     Destinatario
+                       │
+                       └──► Adjuntos
 ```
-              ┌───────────────┐
-              │ Microservicio │
-              └───────┬───────┘
-                      │
-                ┌─────┴─────┐
-                │           │
-               REST        Kafka
-                │           │
-                ▼           ▼
-            ┌──────────────────┐
-            │   Mail Service   │
-            └────────┬─────────┘
-                     │
-                ┌────┴────┐
-                │         │
-                ▼         ▼
-           PostgreSQL    SMTP
-                          │
-                          ▼
-                     Destinatario
-```
 
-La configuración de SMTP, PostgreSQL y Kafka se proporciona
+La configuración de SMTP, PostgreSQL, Kafka y MinIO se proporciona mediante variables de entorno.
 
-mediante variables de entorno.
+---
 
-🔐 Gestión de errores
+# 🔐 Gestión de errores
 
 =====================
 
-La aplicación dispone de un sistema centralizado de gestión
-
-de excepciones mediante GlobalExceptionHandler.
+La aplicación dispone de un sistema centralizado de gestión de excepciones mediante `GlobalExceptionHandler`.
 
 Se controlan, entre otros:
 
@@ -689,11 +701,11 @@ Se controlan, entre otros:
 
 ❌ Errores internos
 
-Los errores producidos durante el envío pueden quedar registrados
+Los errores producidos durante el envío pueden quedar registrados en la información del correo.
 
-en la información del correo.
+---
 
-📈 Estado actual
+# 📈 Estado actual
 
 ================
 
@@ -713,7 +725,11 @@ Funcionalidades disponibles:
 
 ✅ Archivos adjuntos
 
+✅ Almacenamiento de adjuntos mediante MinIO
+
 ✅ Persistencia PostgreSQL
+
+✅ Metadata y referencias de almacenamiento mediante `storage_key`
 
 ✅ Estados de envío
 
@@ -723,19 +739,19 @@ Funcionalidades disponibles:
 
 ✅ Docker
 
-Mail Service está diseñado como un componente reutilizable para
+Mail Service está diseñado como un componente reutilizable para otros microservicios que necesiten enviar correos electrónicos, permitiendo elegir entre comunicación REST o mensajería Kafka y utilizando MinIO para el almacenamiento de archivos adjuntos.
 
-otros microservicios que necesiten enviar correos electrónicos,
+---
 
-permitiendo elegir entre comunicación REST o mensajería Kafka.
-
-📄 Licencia
+# 📄 Licencia
 
 ===========
 
 MIT License — uso libre y modificación.
 
-👤 Autor
+---
+
+# 👤 Autor
 
 ========
 
@@ -751,14 +767,20 @@ Julián Gómez Fernández
 
 🗄️ PostgreSQL
 
+📦 MinIO
+
 📡 Arquitectura de microservicios
 
-🧠 Frase final
+---
+
+# 🧠 Frase final
 
 ==============
 
-"REST cuando necesitas una respuesta.
-
-Kafka cuando necesitas desacoplar.
-
-Mail Service cuando necesitas enviar."
+> "REST cuando necesitas una respuesta.
+>
+> Kafka cuando necesitas desacoplar.
+>
+> MinIO cuando necesitas almacenar.
+>
+> Mail Service cuando necesitas enviar."
