@@ -1,6 +1,5 @@
 package com.julian.mail_service.entity;
 
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -28,18 +27,20 @@ public class EmailAttachment {
 
     private Long size;
 
-    @Column(name = "content", columnDefinition = "bytea")
-    private byte[] content;
+    private String storageKey;
 
     @ManyToOne
     private Email email;
 
-    public EmailAttachment(String filename, String contentType, Long size, byte[] content) {
+    public EmailAttachment(
+            String filename,
+            String contentType,
+            Long size,
+            String storageKey) {
 
         this.filename = filename;
         this.contentType = contentType;
         this.size = size;
-        this.content = content;
+        this.storageKey = storageKey;
     }
-
 }

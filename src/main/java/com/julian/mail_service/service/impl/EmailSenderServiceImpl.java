@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.context.annotation.Lazy;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.InputStreamSource;
 import org.springframework.http.MediaType;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -26,6 +26,7 @@ import com.julian.mail_service.entity.EmailStatus;
 import com.julian.mail_service.entity.RecipientType;
 import com.julian.mail_service.repository.EmailRepository;
 import com.julian.mail_service.service.EmailSenderService;
+import com.julian.mail_service.service.StorageService;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
@@ -34,17 +35,23 @@ import jakarta.mail.internet.MimeMessage;
 public class EmailSenderServiceImpl implements EmailSenderService {
 
     private final JavaMailSender mailSender;
+
     private final EmailRepository emailRepository;
+
     private final EmailSenderService emailSenderService;
+
+    private final StorageService storageService;
 
     public EmailSenderServiceImpl(
             JavaMailSender mailSender,
             EmailRepository emailRepository,
-            @Lazy EmailSenderService emailSenderService) {
+            @Lazy EmailSenderService emailSenderService,
+            StorageService storageService) {
 
         this.mailSender = mailSender;
         this.emailRepository = emailRepository;
         this.emailSenderService = emailSenderService;
+        this.storageService = storageService;
     }
 
     @Override
@@ -86,6 +93,7 @@ public class EmailSenderServiceImpl implements EmailSenderService {
             EmailRequest request) {
 
         if (request.to() != null) {
+
             request.to().forEach(address ->
                     email.addRecipient(
                             new EmailRecipient(
@@ -97,6 +105,7 @@ public class EmailSenderServiceImpl implements EmailSenderService {
         }
 
         if (request.cc() != null) {
+
             request.cc().forEach(address ->
                     email.addRecipient(
                             new EmailRecipient(
@@ -108,6 +117,7 @@ public class EmailSenderServiceImpl implements EmailSenderService {
         }
 
         if (request.bcc() != null) {
+
             request.bcc().forEach(address ->
                     email.addRecipient(
                             new EmailRecipient(
@@ -146,15 +156,25 @@ public class EmailSenderServiceImpl implements EmailSenderService {
             }
 
             try {
+
+                String storageKey = storageService.upload(
+                        attachment.getInputStream(),
+                        filename,
+                        contentType,
+                        attachment.getSize()
+                );
+
                 email.addAttachment(
                         new EmailAttachment(
                                 filename,
                                 contentType,
                                 attachment.getSize(),
-                                attachment.getBytes()
+                                storageKey
                         )
                 );
+
             } catch (IOException e) {
+
                 throw new IllegalStateException(
                         "Error reading attachment: " + filename,
                         e
@@ -236,17 +256,20 @@ public class EmailSenderServiceImpl implements EmailSenderService {
 
     private void addAttachments(
             MimeMessageHelper helper,
-            Email email) throws MessagingException {
+            Email email)
+            throws MessagingException {
 
         for (EmailAttachment attachment : email.getAttachments()) {
 
-            if (attachment.getContent() == null
-                    || attachment.getContent().length == 0) {
+            if (attachment.getStorageKey() == null
+                    || attachment.getStorageKey().isBlank()) {
                 continue;
             }
 
-            ByteArrayResource resource =
-                    new ByteArrayResource(attachment.getContent());
+            InputStreamSource resource =
+                    () -> storageService.download(
+                            attachment.getStorageKey()
+                    );
 
             helper.addAttachment(
                     attachment.getFilename(),
@@ -322,7 +345,9 @@ public class EmailSenderServiceImpl implements EmailSenderService {
     public void processEmail(Email email) {
 
         try {
+
             email.setStatus(EmailStatus.PROCESSING);
+
             emailRepository.save(email);
 
             sendEmail(email);

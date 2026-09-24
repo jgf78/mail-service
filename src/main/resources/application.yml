@@ -35,7 +35,7 @@ spring:
           starttls:
             enable: true
             required: true
-
+            
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:100.108.25.117:9094}
 
@@ -51,3 +51,9 @@ spring:
       properties:
         spring.json.trusted.packages: com.julian.mail_service.*
         spring.json.value.default.type: com.julian.mail_service.kafka.EmailSendEvent
+        
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://minio:9000}
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
+  bucket: ${MINIO_BUCKET:mail-attachments}         
