@@ -14,6 +14,8 @@ import com.julian.mail_service.dto.ErrorResponse;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final String ERROR = "ERROR";
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationException(
             MethodArgumentNotValidException exception) {
@@ -28,7 +30,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(
-                        "ERROR",
+                        ERROR,
                         message
                 ));
     }
@@ -40,7 +42,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(new ErrorResponse(
-                        "ERROR",
+                        ERROR,
                         "The email attachments exceed the maximum allowed size"
                 ));
     }
@@ -52,7 +54,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse(
-                        "ERROR",
+                        ERROR,
                         exception.getMessage()
                 ));
     }
