@@ -49,8 +49,9 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: com.julian.mail_service.*
+        spring.json.trusted.packages: com.julian.mail_service.*,com.julian.cv.model
         spring.json.value.default.type: com.julian.mail_service.kafka.EmailSendEvent
+        spring.json.use.type.headers: false
         
 minio:
   endpoint: ${MINIO_ENDPOINT:http://minio:9000}
